@@ -1,0 +1,3 @@
+# VentiladorMecanico
+
+Instructions and a video describing the assembly and operation of the mechanical ventilator will be added soon...
