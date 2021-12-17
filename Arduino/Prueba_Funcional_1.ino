@@ -160,6 +160,7 @@ void loop()
         }
         tiempo_ciclo_actual= millis();
         estado = 2;
+        volumen_inspiracion=0;
        
       break;
 //-------------------------------------------------------
@@ -173,7 +174,6 @@ void loop()
           {             
             // Cierre válvula de Inspiración
             CierreValvulaInspiracion();
-            //AperturaValvulaExhalacion();
             estado = 3;  
           }
         else //Apertura valvula de inhalación
@@ -224,7 +224,7 @@ void loop()
            CierreValvulaExhalacion();
            mytimers.timer[0].Start = false;
            Peep = Presion;
-           estado = 0;   
+           estado = 0;   // Si lo manda al estado 0, abre exhalación!
            EtapaResp =3 ;  
            duracion_ciclo=acc_ciclo; //en ms  
            
@@ -277,7 +277,6 @@ void loop()
 } //Fin void loop()
 void LeerADS1115()
 {
-    sensor_diferencial_bits = ads1115.readADC_SingleEnded(0); // Sensor de presión diferencial
     sensor_presion_bits = ads1115.readADC_SingleEnded(1); // Sensor de Presión
 }
 void LeerSFM3300()
@@ -288,7 +287,7 @@ void LeerSFM3300()
         uint16_t a = Wire.read(); // only two bytes need to be read
         uint8_t  b = Wire.read(); // if we don't care about CRC
         a = (a<<8) | b;
-        sensor_flujo_bits = ((float)a - 32768) / 120;
+        sensor_flujo_bits = ((float)a - 32000) / 140;
     }
 }
 void LeerSDP811()
@@ -432,7 +431,7 @@ void Calculos(struct FilterMovingAverage FilterMovAvg_DeltaP, struct MTIntegrato
     }
     // Cálculo de presiones
     //Presion = (sensor_presion_bits-presion_zero_cal)/factor_sensor_presion-3.9220;
-    Presion= ((0.002131)*sensor_presion_bits) -2.365;  //
+    Presion= ((0.002131)*sensor_presion_bits) -3.565;  //
     Flujo=  ((0.6545)*sensor_flujo_bits);
     
     //Serial.print("Presion:");
@@ -454,7 +453,7 @@ void Calculos(struct FilterMovingAverage FilterMovAvg_DeltaP, struct MTIntegrato
 void CierreValvulaInspiracion()
 {
     EstadoValvulaInspiracion = false;
-    analogWrite(Val_Ins,Pwm_Min); // Cierre de válvula de inspiración 
+    analogWrite(Val_Ins,Pwm_Min); // Cierre de válvula de inspiración, por qué no cero?
 }
 
 void CierreValvulaExhalacion()
@@ -476,9 +475,6 @@ void AperturaValvulaInspiracion()
     PwmOut = ((valor_inicial_PWM+(valor_final_PWM-valor_inicial_PWM))*Porcentaje_apertura_valvula/100);
 	  analogWrite(Val_Ins,PwmOut); // Abre válvula de Inspiración
     
-    //Serial.print("PwmOut:");
-    //Serial.print(PwmOut);
-    //Serial.print(",");
 }
 
 float DataMean(float sensor)
@@ -542,7 +538,7 @@ void Mostrar_Datos()
         Serial.print(", ");
         Serial.print("Volumen inspiracion: ");
         Serial.print(volumen_inspiracion);  //Calculado
-         Serial.print(",");
+        Serial.print(",");
         Serial.print("PIP: ");
         Serial.print(PIP);
         Serial.print(",");
@@ -576,12 +572,12 @@ void Mostrar_Datos()
         Serial.print("PWM_Caract: ");
         Serial.print(n);
         Serial.print(", ");
-         Serial.print("T. Trans_Caract: ");
+        Serial.print("T. Trans_Caract: ");
         Serial.print(acc_caract);
         Serial.print(", ");
-         Serial.print("MV: ");
+        Serial.print("MV: ");
         Serial.print(MV);
-         Serial.print(", ");
+        Serial.print(", ");
         Serial.print("Diferencial_Presion: ");
         Serial.print(differentialPressure);
         Serial.print(", ");
@@ -646,6 +642,7 @@ float Integral_Flujo(struct MTIntegrator Integrator_Flujo, float entrada)
     
     // Calculo dt viejo unsigned long  dt = millis();
     // Calculo dt nuevo:
+    lasttime=currenttime;
     currenttime=millis();
     dt=currenttime-lasttime;
  
@@ -655,7 +652,6 @@ float Integral_Flujo(struct MTIntegrator Integrator_Flujo, float entrada)
     integral += Integrator_Flujo.In * (dt);
     //Ultima_Muestra = elapseddt;
     Integrator_Flujo.Out = Integrator_Flujo.Gain * (integral*conversion);
-    lasttime=currenttime;
     
     return Integrator_Flujo.Out;
    }

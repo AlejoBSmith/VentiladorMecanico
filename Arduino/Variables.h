@@ -72,7 +72,7 @@ unsigned int presion_soporte = 20;
 
 //Variables en las cajas de texto el HMI
 int estado = 0; //Estado inicial del sistema
-int inicio = 1; //Boton On/Off en la HMI
+int inicio = 0; //Boton On/Off en la HMI
 int caso = 0;
 int ModoOperacion = 1;
 int PorcentajeValvula = 0;
@@ -85,7 +85,7 @@ int Presion_deseada = 25;
 //Parametros de salida Pwm
 float valor_final_PWM = 10000; //12500
 float valor_inicial_PWM = 4930; //9500
-unsigned int Porcentaje_apertura_valvula = 40;
+unsigned int Porcentaje_apertura_valvula = 60;
 int PwmOut = 0;
 int subirPwm = 1;
 int bajarPwm = 0;
