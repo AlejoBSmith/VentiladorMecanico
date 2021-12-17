@@ -145,7 +145,6 @@ void loop()
       break; // Cierre del case 0
 //-------------------------------------------------------        
       case 1: // Cuando está presionado el botón de start en el HMI
-        CierreValvulaExhalacion();
         AuxEtapa = false;
         caso = 1;
         if (Caract_Pulmon == 1)
@@ -160,6 +159,7 @@ void loop()
         }
         tiempo_ciclo_actual= millis();
         estado = 2;
+        integral=0;
         volumen_inspiracion=0;
        
       break;
@@ -167,6 +167,7 @@ void loop()
       case 2: //Comienzo inhalacion       
         EtapaResp = 1;
         caso = 2;
+        CierreValvulaExhalacion();
         volumen_inspiracion = Integral_Flujo(Integrator_Flujo,Flujo);     
         if (ModoOperacion == 1) // Modo Volumen Control
         {
@@ -224,7 +225,13 @@ void loop()
            CierreValvulaExhalacion();
            mytimers.timer[0].Start = false;
            Peep = Presion;
-           estado = 0;   // Si lo manda al estado 0, abre exhalación!
+           if (inicio==1){
+           estado = 2;   // Si lo manda al estado 0, abre exhalación!
+           }
+           else{
+             estado=0;
+           }
+           
            EtapaResp =3 ;  
            duracion_ciclo=acc_ciclo; //en ms  
            
