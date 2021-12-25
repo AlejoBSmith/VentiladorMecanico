@@ -29,4 +29,37 @@ The files for acrylic laser cutting of the ventilator's case is in the "Cortador
 
 A descriptive video of the whole system is available at: https://youtu.be/rELKO5cxeyU (english) and https://youtu.be/uDOBed04stI (spanish)
 
+Componentes utilizados
+Cantidad
+Electroválvula de acción directa Burkert        1
+Electroválvula proporcional Burkert             2
+Microcontroladora Teensy 4.1                    1
+Sensor de flujo SFM3000                         1
+Sensor diferencial de presión SDP811            1
+Sensor de presión MPXV4006                      1
+Convertidor analogico – digital ADS 1115        1
+Convertidor de Nivel Lógico Bidireccional       1
+Fuente DC NDR 120 24                            1
+Regulador de Voltaje TrippLite                  1
+Pantalla Táctil RPI Touch                       1
+Filtro Antibacterial Armstrong                  1
+Pulmón Inteligente IMT Analytics Rigel Medical  1
+Adaptadores de cobre                            3
+Tuberías de cobre                               3
+Mosfet 15A 400W XY-MOS                          4
+Extensores Micro-USB                            1
+Extensores USB                                  2
+Cable HDMI                                      1
+Cable tipo-C                                    1
+Odyssey Mini PC                                 1
+Tornillos 6-32mm                                100
+Tuercas 6-32mm                                  100
+Separadores 30+6mm M.2                          15
+Tuercas M.2                                     15
+Tornillos 6mm M.2                               15
+RielDIN                                         1
+Soportes impresos en PLA 3D                     30
+Acrílico 6mm espesor /cm2                       9000
+Mezclador de Oxígeno                            1
+
 Instructions and a video describing the assembly and operation of the mechanical ventilator will be added soon...
