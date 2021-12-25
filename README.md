@@ -27,4 +27,6 @@ A HMI is needed for data visualization and operating values change. Files for th
 External case
 The files for acrylic laser cutting of the ventilator's case is in the "Cortadora Láser" folder.
 
+A descriptive video of the whole system is available at: https://youtu.be/rELKO5cxeyU (english) and https://youtu.be/uDOBed04stI (spanish)
+
 Instructions and a video describing the assembly and operation of the mechanical ventilator will be added soon...
