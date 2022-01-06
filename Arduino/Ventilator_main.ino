@@ -234,7 +234,7 @@ void loop()
            
            EtapaResp =3 ;  
            duracion_ciclo=acc_ciclo; //en ms  
-           
+           acc_ciclo=0; //reinicia el contador del tiempo para los BPM
              
          }
          else
@@ -242,7 +242,7 @@ void loop()
            mytimers.presetTimer(0,(Tiempo_Expiracion_ms),TON);
            if (inicio_modoAsistido ==1)
            {
-             if (mytimers.timer[0].Counter >= (Tiempo_Expiracion_ms/2)) //Modo asistido
+             if (mytimers.timer[0].Counter >= (Tiempo_Expiracion_ms/3)) //Modo asistido, monitorea umbral al 33% del tiempo de espiración
               {
                
                if (derivada>=150) //Umbral establecido 
@@ -251,7 +251,7 @@ void loop()
                 derivada=0;
                 duracion_ciclo=acc_ciclo;
                 acc_ciclo=0;
-                
+                mytimers.timer[0].Start = false;
                 break;
                }
               }
