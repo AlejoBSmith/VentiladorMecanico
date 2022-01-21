@@ -30,20 +30,20 @@ SensirionI2CSdp sdp;
 
 void setup() 
 {
-    // Configuración de salidas y seteo de frecuencia a 700Hz
+    // IO configuration and PWM frequency (check valve datasheet for correct operation freq)
     pinMode(Val_Ins,OUTPUT);
     pinMode(Val_Exh,OUTPUT);
     analogWriteFrequency(36,Frecuencia);
     analogWriteResolution(Resolucion);
-    //Iniciar Promediados 
+    // Averaging function start
     promediomovil.begin();
     VIF_promedio.begin();
     VEF_promedio.begin();
     PIP_promedio.begin();
-    
+
     //--------------------------------------------------------------
-    Serial.begin(115200); // Velocidad del Puerto Serial
     ads1115.begin(0x48); // Iniciar comunicación I2C con el ADS1115
+    
     // Establecer comunicación con el SFM3300
     Wire.begin(); // Iniciar comunicación I2C
     while(!Serial) {} // let serial console settle
@@ -64,10 +64,9 @@ void setup()
 }
 void loop() 
 {
-
+  // Checks if there is a command sent from the LabVIEW HMI
     if (Serial.available() > 0) {
     StringEntrada = Serial.readStringUntil('\n');
-
     StringSplitter *splitter = new StringSplitter(StringEntrada, ',', 15);  // new StringSplitter(string_to_split, delimiter, limit)
     inicio = splitter->getItemAtIndex(0).toInt();
     Porcentaje_apertura_valvula = splitter->getItemAtIndex(1).toInt();
@@ -80,9 +79,6 @@ void loop()
     Start_caract=splitter->getItemAtIndex(8).toInt();
     TipoCaract_Rampa=splitter->getItemAtIndex(9).toInt();
     TipoCaract_Escalon=splitter->getItemAtIndex(10).toInt();
-   // Tiempo_incremento_rampa=splitter->getItemAtIndex(11).toInt();
-   // incremento_n_rampa=splitter->getItemAtIndex(12).toInt();
-    
     }
     
     mytimers.runTimers(millis());
@@ -284,7 +280,39 @@ void loop()
 } //Fin void loop()
 void LeerADS1115()
 {
-    sensor_presion_bits = ads1115.readADC_SingleEnded(1); // Sensor de Presión
+Adafruit_ADS1115::Adafruit_ADS1115() {
+  m_bitShift = 0;
+  m_gain = GAIN_TWOTHIRDS; /* +/- 6.144V range (limited to VDD +0.3V max!) */
+  m_dataRate = RATE_ADS1115_128SPS;
+}
+bool Adafruit_ADS1X15::begin(uint8_t i2c_addr, TwoWire *wire) {
+  m_i2c_dev = new Adafruit_I2CDevice(i2c_addr, wire);
+  return m_i2c_dev->begin();
+}
+// Start with default values
+  uint16_t config =
+      ADS1X15_REG_CONFIG_CQUE_NONE |    // Disable the comparator (default val)
+      ADS1X15_REG_CONFIG_CLAT_NONLAT |  // Non-latching (default val)
+      ADS1X15_REG_CONFIG_CPOL_ACTVLOW | // Alert/Rdy active low   (default val)
+      ADS1X15_REG_CONFIG_CMODE_TRAD |   // Traditional comparator (default val)
+      ADS1X15_REG_CONFIG_MODE_SINGLE;   // Single-shot mode (default)
+
+  // Set PGA/voltage range
+  config |= m_gain;
+  // Set data rate
+  config |= m_dataRate;
+  // Set single-ended input channel
+  config |= ADS1X15_REG_CONFIG_MUX_SINGLE_1;
+  // Set 'start single-conversion' bit
+  config |= ADS1X15_REG_CONFIG_OS_SINGLE;
+
+  // Write config register to the ADC
+  writeRegister(ADS1X15_REG_POINTER_CONFIG, config);
+  // Wait for the conversion to complete
+  while (!conversionComplete())
+    ;
+  // Read the conversion results
+    sensor_presion_bits = getLastConversionResults();
 }
 void LeerSFM3300()
 {
