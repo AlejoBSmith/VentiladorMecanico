@@ -1,5 +1,8 @@
 # VentiladorMecanico
 
+If used for research purposes, please cite this work as:
+A. Von Chong et al., "Low-cost, rapidly deployable emergency mechanical ventilators during the COVID-19 pandemic in a developing country: Comparing development feasibility between bag-valve and positive airway pressure designs," 2021 43rd Annual International Conference of the IEEE Engineering in Medicine & Biology Society (EMBC), 2021, pp. 7629-7635, doi: 10.1109/EMBC46164.2021.9630676.
+
 This repository has been created to share the results of the mechanical ventilator developped in Panama, in response to the COVID-19 pandemic.
 
 The mechanical ventilator is comprised by an electronic system, a pneumatic system, an embedded control algorithm, and a Human-Machine-Interface.
