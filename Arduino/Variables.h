@@ -95,31 +95,45 @@ float integral = 0;
 float dt = 0;
 
 //Variables internas de operación
+String bit_inicio;
+String CaractValve;
+String Modo;
+String Ent_Valve;
+String Ent_PEED_D;
+String Ent_PS;
+String Ent_Vesp;
+String Ent_TP;
+String Ent_Te;
+String StringEntrada;
 
 int TipoCaract_Rampa=0;
 int TipoCaract_Escalon=0;
 int n = Pwm_Min; //Incrementos de pwm para la caracterizacion
 int Tiempo_incremento_rampa=1; //ms
 int incremento_n_rampa=5;
-
 int TipoCaract = 1;
 int Start_caract = 0;
+int f;
+int AuxCaractPulmon = valor_inicial_PWM;
+int datos_zero_cal = 300;
+
+unsigned int EtapaResp;
+unsigned int tiempoaccum;
 
 bool Caract_Pulmon = 0;
 bool AuxEtapa;
 bool time_out;
 bool EstadoValvulaInspiracion;
 bool EstadoValvulaExhalacion;
-unsigned int EtapaResp;
+bool SensorDetected;
+bool FlowSens;
+bool PressSens;
+bool DiffSens;
 bool Zero_calibration = 0;
-int f;
-int AuxCaractPulmon = valor_inicial_PWM;
-int datos_zero_cal = 300;
-float IE;
 
+float IE;
 float tiempo_ciclo_actual = 0;
 float tiempo_ciclo_anterior = 0;
-unsigned int tiempoaccum;
 float BPM_calculado;
 float volumen_inspiracion;
 float MV = 0;
@@ -134,28 +148,13 @@ float PEF = 0;
 float VEF=10;
 float VIF = 0;
 float Tex = 3;
-
-
 float sensor_presion_bits = 0;
 float sensor_flujo_bits = 0;
 float sensor_diferencial_bits = 0;
-
 float datos_presion_zero_cal;
 float datos_flujo_zero_cal;
 float datos_diferencial_zero_cal;
-
 float factor_sensor_presion = 21.24;
 float factor_sensor_flujo = 77;
 float factor_sensor_diferencial = 434;
-
 float Mean;
-
-/*
-  Flujo_Avg = MTFilterMovingAverage_Flujo(FilterMovAvg_Flujo,Flujo);
-    Volumen = Integral_Flujo(Integrator_Flujo,Flujo_Avg);
-    Serial.println(Volumen);
-
-    DeltaP_Avg = MTFilterMovingAverage_DeltaP(FilterMovAvg_DeltaP,DeltaP);
-    DeltaP_Final = Integral_DeltaP(Integrator_DeltaP,DeltaP_Avg);
-    Serial.println(DeltaP_Final);
-*/
