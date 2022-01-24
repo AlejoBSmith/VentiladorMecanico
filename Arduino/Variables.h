@@ -120,7 +120,7 @@ int datos_zero_cal = 300;
 unsigned int EtapaResp;
 unsigned int tiempoaccum;
 
-bool Caract_Pulmon = 0;
+bool Caract_Pulmon = false;
 bool AuxEtapa;
 bool time_out;
 bool EstadoValvulaInspiracion;
@@ -129,7 +129,7 @@ bool SensorDetected;
 bool FlowSens;
 bool PressSens;
 bool DiffSens;
-bool Zero_calibration = 0;
+bool Zero_calibration = false;
 
 float IE;
 float tiempo_ciclo_actual = 0;

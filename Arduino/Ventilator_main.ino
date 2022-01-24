@@ -16,6 +16,8 @@ WTimer mytimers;
 Adafruit_ADS1115 ads1115;
 Separador HMI;
 SensirionI2CSdp sdp;
+elapsedMillis PlatTimer;
+elapsedMillis ExhTimer;
 
 //Averaging functions:
 movingAvg VIF_promedio(5);
@@ -143,7 +145,9 @@ void loop()
           inicio = 0;
         }
         else
+        {
         AuxCaractPulmon = AuxCaractPulmon + 50;
+        }
       }
       tiempo_ciclo_actual= millis();
       estado = 2;
@@ -164,9 +168,10 @@ void loop()
         {             
           // Closes inspiration valve if pressure or volume are exceeded
           CierreValvulaInspiracion();
+          PlatTimer = 0;
           estado = 3; //State change
         }
-      else // Opens inspiratory valve if neither set pressure or volume are reached
+        else // Opens inspiratory valve if neither set pressure or volume are reached
         {
           EstadoValvulaInspiracion = true;
           if(Caract_Pulmon == 1) //For lung characterization, variable pwm
@@ -185,28 +190,23 @@ void loop()
       integral=0; //Stops integrating flow
       caso = 3;
       EtapaResp = 2;
-      if (mytimers.timer[0].Done)
+      if (PlatTimer >= Tiempo_Plateau_ms)
       {
-        mytimers.timer[0].Start = false;
+        PlatTimer = 0;
         Pplat = Presion;
-        time_out = false;
-        estado = 4;
+        ExhTimer = 0;
         Tiempo_Inspiracion = (millis()- tiempo_ciclo_actual)/1000; // Inspiration time including hold calc
+        estado = 4;
         AperturaValvulaExhalacion();          
-      }
-      else
-      {
-        mytimers.presetTimer(0,(Tiempo_Plateau_ms),TON);
-        mytimers.timer[0].Start = true;     
       }
     break;
   //-------------------------------------------------------
     case 4: //Exhalacion     
       caso = 4;
       integral=0;
-      if (mytimers.timer[0].Done)
+      if (ExhTimer >= Tiempo_Expiracion_ms)
       {
-        mytimers.timer[0].Start = false;
+        ExhTimer = 0;
         Peep = Presion;
         if (inicio==1)
         {
@@ -222,19 +222,15 @@ void loop()
       }
       else
       {
-        mytimers.presetTimer(0,(Tiempo_Expiracion_ms),TON);
-        mytimers.timer[0].Start = true;
         if (inicio_modoAsistido ==1) //If assisted mode is on
         {
-          if (mytimers.timer[0].Counter >= (Tiempo_Expiracion_ms/3)) //Checks wether 33% of expiratory time has passed before checking pressure variability threshold
+          if (ExhTimer >= (Tiempo_Expiracion_ms/3)) //Checks wether 33% of expiratory time has passed before checking pressure variability threshold
           {
             if (derivada>=150) //Pressure sensitivity (diff Pressure)
             {
               estado = 2; //Starts a new inpiratory cycle
-              derivada = 0;
               duracion_ciclo=acc_ciclo;
               acc_ciclo=0;
-              mytimers.timer[0].Start = false;
               break;
             }
           }
@@ -280,12 +276,11 @@ void LeerSFM3300()
 {
   if (2 == Wire.requestFrom(sfm3300i2c, 2))
   { 
-    // just keep reading SLM (Standard Liter per Minute)
-    uint16_t a = Wire.read(); // only two bytes need to be read
-    uint8_t  b = Wire.read(); // if we don't care about CRC
+    uint16_t a = Wire.read();
+    uint8_t  b = Wire.read();
     a = (a<<8) | b;
     sensor_flujo_bits = ((float)a - 32000) / 140;
-    if (abs(sensor_flujo_bits)>100) //High value means sensor is disconnected
+    if (abs(sensor_flujo_bits)>100) //High value means sensor is disconnected, retry connection
     {
       FlowSens=false;
       Wire.beginTransmission(sfm3300i2c);
@@ -299,12 +294,8 @@ void LeerSFM3300()
 void LeerSDP811()
 {
   error_sdp = sdp.readMeasurement(differentialPressure, temperature);
-
-  sdp.begin(Wire, SDP8XX_I2C_ADDRESS_1);
-  sdp.stopContinuousMeasurement();
-  error_sdp = sdp.readProductIdentifier(productNumber, serialNumber, serialNumberSize);
-  error_sdp = sdp.startContinuousMeasurementWithDiffPressureTCompAndAveraging();
 }
+
 void CaracterizarValvula(int Tiempo_incremento_rampa,int incremento_n_rampa)
 {
   tiempofinal_caract=tiempoinicial_caract;
