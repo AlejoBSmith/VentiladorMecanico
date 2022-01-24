@@ -30,7 +30,7 @@ struct Proporcional
 // Declaración de variables globales
 float Flujo = 0; float Volumen = 0; float DeltaP = 0;
 float Flujo_Avg = 0; float DeltaP_Avg = 0; float DeltaP_Final = 0;
-float Presion = 0;  // La suma de Peep_deseado + presion_soporte
+float Presion = 0;
 float DiferencialPresion=0;
 
 //Parametros para ModoAsistido
@@ -68,15 +68,16 @@ int Val_Exh = 38; //Válvula de exhalación
 
 // Parametros para controlador P desde HMI
 unsigned int Peep_deseado = 16;
-unsigned int presion_soporte = 20;
+int presion_soporte = 20;
 
 //Variables en las cajas de texto el HMI
 int estado = 0; //Estado inicial del sistema
 int inicio = 0; //Boton On/Off en la HMI
 int caso = 0;
-int ModoOperacion = 1;
+int ModoOperacion = 0;
 int PorcentajeValvula = 0;
-float Tiempo_Inspiracion;
+int Tiempo_Inspiracion = 0;
+int Tiempo_InspiracionPC_ms = 3000;
 int Tiempo_Plateau_ms = 2000;
 int Tiempo_Expiracion_ms=500;
 int Volumen_deseado = 500;
@@ -85,6 +86,8 @@ int Presion_deseada = 25;
 //Parametros de salida Pwm
 float valor_final_PWM = 10000; //12500
 float valor_inicial_PWM = 4930; //9500
+float errorPC = 0;
+float errorIntegral = 0;
 unsigned int Porcentaje_apertura_valvula = 60;
 int PwmOut = 0;
 int subirPwm = 1;
@@ -120,7 +123,7 @@ int datos_zero_cal = 300;
 unsigned int EtapaResp;
 unsigned int tiempoaccum;
 
-bool Caract_Pulmon = false;
+bool Caract_Pulmon = 0;
 bool AuxEtapa;
 bool time_out;
 bool EstadoValvulaInspiracion;
@@ -129,7 +132,7 @@ bool SensorDetected;
 bool FlowSens;
 bool PressSens;
 bool DiffSens;
-bool Zero_calibration = false;
+bool Zero_calibration = 0;
 
 float IE;
 float tiempo_ciclo_actual = 0;
@@ -158,3 +161,8 @@ float factor_sensor_presion = 21.24;
 float factor_sensor_flujo = 77;
 float factor_sensor_diferencial = 434;
 float Mean;
+
+// PID parameters
+float kp = 10;
+float ki = 5;
+float kd = 0;

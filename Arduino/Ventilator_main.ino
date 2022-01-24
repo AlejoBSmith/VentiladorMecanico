@@ -18,6 +18,7 @@ Separador HMI;
 SensirionI2CSdp sdp;
 elapsedMillis PlatTimer;
 elapsedMillis ExhTimer;
+elapsedMillis PCTimer;
 
 //Averaging functions:
 movingAvg VIF_promedio(5);
@@ -74,6 +75,9 @@ void loop()
     Start_caract=splitter->getItemAtIndex(8).toInt();
     TipoCaract_Rampa=splitter->getItemAtIndex(9).toInt();
     TipoCaract_Escalon=splitter->getItemAtIndex(10).toInt();
+    Tiempo_InspiracionPC_ms=splitter->getItemAtIndex(11).toInt();
+    kp=splitter->getItemAtIndex(12).toInt();
+    ki=splitter->getItemAtIndex(13).toInt();
   }
   
   mytimers.runTimers(millis()); //Timing function
@@ -150,10 +154,10 @@ void loop()
         }
       }
       tiempo_ciclo_actual= millis();
+      PCTimer = 0;
       estado = 2;
       integral=0;
       volumen_inspiracion=0; //Reset inspiratory volume to avoid integral drift
-        
     break;
   //-------------------------------------------------------
     case 2: //Inspiration begin     
@@ -184,6 +188,25 @@ void loop()
           }
         }
       }
+      if (ModoOperacion == 0) //Pressure control mode
+      {
+        if ((PCTimer >= Tiempo_InspiracionPC_ms))
+        {
+          // Maintains desired pressure until preset time is reached or volume is exceeded
+          CierreValvulaInspiracion();
+          errorIntegral = 0;
+          PlatTimer = 0;
+          estado = 3; //State change
+        }
+        else
+        {
+          EstadoValvulaInspiracion = true;
+          errorPC = presion_soporte-Presion;
+          errorIntegral += errorPC*duracion_ciclo/1000;
+          PwmOut = int((kp*errorPC+ki*errorIntegral));
+          analogWrite(Val_Ins,PwmOut); // Abre válvula de Inspiración
+        }
+      }
     break;
   //-------------------------------------------------------
     case 3: //Plateau (hold) time
@@ -192,7 +215,6 @@ void loop()
       EtapaResp = 2;
       if (PlatTimer >= Tiempo_Plateau_ms)
       {
-        PlatTimer = 0;
         Pplat = Presion;
         ExhTimer = 0;
         Tiempo_Inspiracion = (millis()- tiempo_ciclo_actual)/1000; // Inspiration time including hold calc
@@ -206,11 +228,11 @@ void loop()
       integral=0;
       if (ExhTimer >= Tiempo_Expiracion_ms)
       {
-        ExhTimer = 0;
         Peep = Presion;
         if (inicio==1)
         {
-        estado = 2;
+          PCTimer = 0;
+          estado = 2;
         }
         else
         {
@@ -228,6 +250,7 @@ void loop()
           {
             if (derivada>=150) //Pressure sensitivity (diff Pressure)
             {
+              PCTimer = 0;
               estado = 2; //Starts a new inpiratory cycle
               duracion_ciclo=acc_ciclo;
               acc_ciclo=0;
@@ -415,8 +438,7 @@ void Calculos(struct FilterMovingAverage FilterMovAvg_DeltaP, struct MTIntegrato
     MV = (volumen_inspiracion*BPM_calculado)/1000;
   }
   // Cálculo de presiones
-  //Presion = (sensor_presion_bits-presion_zero_cal)/factor_sensor_presion-3.9220;
-  Presion= ((0.002131)*sensor_presion_bits) -3.565;  //
+  Presion= ((0.002131)*sensor_presion_bits) -3.565;
   Flujo=  ((0.6545)*sensor_flujo_bits);
   // Cálculo del flujo diferencial y con sensirion
   DeltaP = (sensor_diferencial_bits-diferencial_zero_cal)/factor_sensor_diferencial; //Diferencial
@@ -556,6 +578,8 @@ void Mostrar_Datos()
   Serial.print(", ");
   Serial.print("Caso: ");
   Serial.print(caso);
+  Serial.print(", ");
+  Serial.print(errorPC);
   Serial.print(", ");
   Serial.print("String: ");
   Serial.print(StringEntrada);
