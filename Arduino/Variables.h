@@ -1,37 +1,11 @@
-// Declaración de structs
-struct MTIntegrator
-{
-  bool Enable; float Gain;
-  bool Update; float In;
-  int OutPresetValue; float Out;
-  bool SetOut; bool HoldOut;
-};
-
-struct FilterMovingAverage
-{
-  bool Enable; int WindowLength;
-  bool Update; float In; float Out;
-};
-
-struct Proporcional
-{
-  unsigned long ahora;
-  unsigned long pasado;
-  double error;
-  double Out;
-  float Kp;
-  float SetValue;
-  float ActValue;
-  int dt;
-  int Tiempo_Muestreo;
-
-};
-
 // Declaración de variables globales
 float Flujo = 0; float Volumen = 0; float DeltaP = 0;
 float Flujo_Avg = 0; float DeltaP_Avg = 0; float DeltaP_Final = 0;
 float Presion = 0;
 float DiferencialPresion=0;
+float offsetFlow = 0;
+float offsetPressure = 0;
+float offsetDiffPress = 0;
 
 //Parametros para ModoAsistido
 int inicio_modoAsistido=0;
@@ -63,8 +37,9 @@ int Pwm_Min = 0; // Valor PWM mínimo permitido
 int Pwm_Max = 16383; // Valor PWM máximo permitido
 int Resolucion = 14; // bits
 int Tiempo = 3000; // ms
-int Val_Ins = 36; //Válvula de inspiración
-int Val_Exh = 38; //Válvula de exhalación
+int Val_Ins = 36; //Inspiratory valve
+int Val_PC = 37; //Pressure control leak valve
+int Val_Exh = 38; //Expiratory valve, on pin 38, Teensy 4.1 is NOT PWM capable
 
 // Parametros para controlador P desde HMI
 unsigned int Peep_deseado = 16;
@@ -74,22 +49,25 @@ int presion_soporte = 20;
 int estado = 0; //Estado inicial del sistema
 int inicio = 0; //Boton On/Off en la HMI
 int caso = 0;
-int ModoOperacion = 0;
-int PorcentajeValvula = 0;
+int ModoOperacion = 1; //0 for pressure control, 1 for volume control
+int PorcentajeValvula = 50;
 int Tiempo_Inspiracion = 0;
-int Tiempo_InspiracionPC_ms = 3000;
-int Tiempo_Plateau_ms = 2000;
-int Tiempo_Expiracion_ms=500;
+unsigned int Tiempo_InspiracionPC_ms = 3000;
+unsigned int Tiempo_max_insp_VC = 5000;
+unsigned int Tiempo_Plateau_ms = 500;
+unsigned int Tiempo_Expiracion_ms=3000;
 int Volumen_deseado = 500;
 int Presion_deseada = 25;
 
 //Parametros de salida Pwm
-float valor_final_PWM = 10000; //12500
-float valor_inicial_PWM = 4930; //9500
+int valor_final_PWM = 12000;
+int valor_inicial_PWM = 4000;
 float errorPC = 0;
 float errorIntegral = 0;
 unsigned int Porcentaje_apertura_valvula = 60;
 int PwmOut = 0;
+int PwmOutAux = valor_inicial_PWM;
+int PwmOutPC = 0; // PWM value for leak valve during pressure control
 int subirPwm = 1;
 int bajarPwm = 0;
 
@@ -163,6 +141,6 @@ float factor_sensor_diferencial = 434;
 float Mean;
 
 // PID parameters
-float kp = 10;
-float ki = 5;
-float kd = 0;
+int kp = 10;
+int ki = 5;
+int kd = 0;

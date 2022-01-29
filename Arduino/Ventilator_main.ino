@@ -1,3 +1,5 @@
+// Corregir rutina de sdp811, actualmente dura 10 ms
+
 #include <StringSplitter.h>
 #include <WTimer.h>
 #include <Wire.h>
@@ -19,6 +21,7 @@ SensirionI2CSdp sdp;
 elapsedMillis PlatTimer;
 elapsedMillis ExhTimer;
 elapsedMillis PCTimer;
+elapsedMillis VCTimerInsp;
 
 //Averaging functions:
 movingAvg VIF_promedio(5);
@@ -43,6 +46,7 @@ void setup()
   //--------------------------------------------------------------
   // Starts ADS1115 ADC
   ads1115.begin(0x48); //Address is 0x48 when ADDR pin is connected to GND
+  ads1115.setDataRate(RATE_ADS1115_860SPS);
   // Starts communication with Sensirion SFM3300
   Wire.begin(); // Iniciar comunicación I2C
   while(!Serial) {} // let serial console settle
@@ -57,13 +61,14 @@ void setup()
   error_sdp = sdp.startContinuousMeasurementWithDiffPressureTCompAndAveraging();
   //--------------------------------------------------------------
 }
+
 void loop() 
 {
 // First check if any of the operating values from the HMI have changed
   if (Serial.available() > 0) 
   {
     StringEntrada = Serial.readStringUntil('\n');
-    StringSplitter *splitter = new StringSplitter(StringEntrada, ',', 15);  // new StringSplitter(string_to_split, delimiter, limit)
+    StringSplitter *splitter = new StringSplitter(StringEntrada, ',', 40);  // new StringSplitter(string_to_split, delimiter, limit)
     inicio = splitter->getItemAtIndex(0).toInt();
     Porcentaje_apertura_valvula = splitter->getItemAtIndex(1).toInt();
     presion_soporte = splitter->getItemAtIndex(2).toInt();
@@ -78,11 +83,10 @@ void loop()
     Tiempo_InspiracionPC_ms=splitter->getItemAtIndex(11).toInt();
     kp=splitter->getItemAtIndex(12).toInt();
     ki=splitter->getItemAtIndex(13).toInt();
+    ModoOperacion=splitter->getItemAtIndex(14).toInt();
   }
   
   mytimers.runTimers(millis()); //Timing function
-  MTIntegrator Integrator_Flujo,Integrator_DeltaP;
-  FilterMovingAverage FilterMovAvg_Flujo,FilterMovAvg_DeltaP;
 
   //------------------------------------------------------------------------------
   // Read sensors
@@ -91,10 +95,7 @@ void loop()
   LeerSDP811();
   //------------------------------------------------------------------------------
 
-  Calculos(FilterMovAvg_DeltaP, Integrator_DeltaP, FilterMovAvg_Flujo,Integrator_Flujo); //Sensor data conversion
-  Statics_Vol_Max(volumen_inspiracion);
-  Statics_Vol_Min(volumen_inspiracion);
-  Statics_Presion_Max(Presion);
+  Calculos(); //Sensor data conversion
   Mostrar_Datos(); //Sends variables through serial port
   modoAsistido(Presion); 
   
@@ -115,6 +116,7 @@ void loop()
       caso = 0;
       CierreValvulaInspiracion(); //Keeps inspiratory valve closed
       AperturaValvulaExhalacion(); //Keeps expiratory valve open
+      volumen_inspiracion = 0;
       EtapaResp = 0;
       acc_ciclo = 0;
       VIF = 0;
@@ -124,6 +126,9 @@ void loop()
       {
         Start_caract = false;
         Zero_calibration = false;
+        offsetFlow = sensor_flujo_bits;
+        offsetPressure = ((0.002131)*sensor_presion_bits) -3.565;
+        offsetDiffPress = sensor_diferencial_bits/37960.3;
         estado = 1;
       }
       if(Start_caract== 1 && inicio == 0 && Zero_calibration == 0) // Begins system characterization and forces other operating modes to false
@@ -154,7 +159,8 @@ void loop()
         }
       }
       tiempo_ciclo_actual= millis();
-      PCTimer = 0;
+      PCTimer = 0; //only for first breath
+      VCTimerInsp = 0;
       estado = 2;
       integral=0;
       volumen_inspiracion=0; //Reset inspiratory volume to avoid integral drift
@@ -164,23 +170,24 @@ void loop()
       EtapaResp = 1;
       caso = 2;
       CierreValvulaExhalacion();
-      volumen_inspiracion = Integral_Flujo(Integrator_Flujo,Flujo);
+      volumen_inspiracion += Flujo*deltaT_ciclo;
 
       if (ModoOperacion == 1) // Volume control mode
       {
-        if(Presion >= (Peep_deseado + presion_soporte)||(Volumen_deseado <=  volumen_inspiracion))
+        if(Presion >= (Peep_deseado + presion_soporte)||(Volumen_deseado <=  volumen_inspiracion)||(VCTimerInsp>Tiempo_max_insp_VC))
         {             
           // Closes inspiration valve if pressure or volume are exceeded
           CierreValvulaInspiracion();
+          PIP = Presion;
           PlatTimer = 0;
           estado = 3; //State change
         }
-        else // Opens inspiratory valve if neither set pressure or volume are reached
+        else // Opens inspiratory valve if neither set pressure or volume have been reached
         {
           EstadoValvulaInspiracion = true;
           if(Caract_Pulmon == 1) //For lung characterization, variable pwm
           {
-            analogWrite(Val_Ins,AuxCaractPulmon);         
+            analogWrite(Val_Ins,AuxCaractPulmon);
           }
           else
           {
@@ -190,10 +197,11 @@ void loop()
       }
       if (ModoOperacion == 0) //Pressure control mode
       {
-        if ((PCTimer >= Tiempo_InspiracionPC_ms))
+        if ((PCTimer >= Tiempo_InspiracionPC_ms)||(Volumen_deseado <=  volumen_inspiracion))
         {
           // Maintains desired pressure until preset time is reached or volume is exceeded
           CierreValvulaInspiracion();
+          PIP = Presion;
           errorIntegral = 0;
           PlatTimer = 0;
           estado = 3; //State change
@@ -201,10 +209,7 @@ void loop()
         else
         {
           EstadoValvulaInspiracion = true;
-          errorPC = presion_soporte-Presion;
-          errorIntegral += errorPC*duracion_ciclo/1000;
-          PwmOut = int((kp*errorPC+ki*errorIntegral));
-          analogWrite(Val_Ins,PwmOut); // Abre válvula de Inspiración
+          AperturaValvulaInspiracion();
         }
       }
     break;
@@ -213,13 +218,24 @@ void loop()
       integral=0; //Stops integrating flow
       caso = 3;
       EtapaResp = 2;
-      if (PlatTimer >= Tiempo_Plateau_ms)
+      if (ModoOperacion == 1)
+      {
+        if ((PlatTimer >= Tiempo_Plateau_ms))
+        {
+          Pplat = Presion;
+          ExhTimer = 0;
+          Tiempo_Inspiracion = (millis()- tiempo_ciclo_actual)/1000; // Inspiration time including hold calc
+          estado = 4;
+          AperturaValvulaExhalacion();          
+        }
+      }
+      else
       {
         Pplat = Presion;
         ExhTimer = 0;
         Tiempo_Inspiracion = (millis()- tiempo_ciclo_actual)/1000; // Inspiration time including hold calc
         estado = 4;
-        AperturaValvulaExhalacion();          
+        AperturaValvulaExhalacion();
       }
     break;
   //-------------------------------------------------------
@@ -232,7 +248,10 @@ void loop()
         if (inicio==1)
         {
           PCTimer = 0;
+          VCTimerInsp = 0;
           estado = 2;
+          volumen_inspiracion = 0;
+          PwmOutAux = valor_inicial_PWM;
         }
         else
         {
@@ -285,16 +304,9 @@ void loop()
 
 void LeerADS1115()
 {
-  SensorDetected=ads1115.begin(0x48);
-  if(SensorDetected){
   sensor_presion_bits = ads1115.readADC_SingleEnded(1); // Sensor de Presión
-  PressSens=true;
-  }
-  else{
-  PressSens=false;
-  sensor_presion_bits = 0;
-  }
 }
+
 void LeerSFM3300()
 {
   if (2 == Wire.requestFrom(sfm3300i2c, 2))
@@ -303,12 +315,13 @@ void LeerSFM3300()
     uint8_t  b = Wire.read();
     a = (a<<8) | b;
     sensor_flujo_bits = ((float)a - 32000) / 140;
-    if (abs(sensor_flujo_bits)>100) //High value means sensor is disconnected, retry connection
+    if(abs(sensor_flujo_bits)>=100)
     {
-      FlowSens=false;
+      Wire.begin(); // Iniciar comunicación I2C
+      while(!Serial) {} // let serial console settle
       Wire.beginTransmission(sfm3300i2c);
-      Wire.write(0x10); // start continuous measurement
-      Wire.write(0x00); // command 0x1000
+      Wire.write(0x10);
+      Wire.write(0x00);
       Wire.endTransmission();
     }
   }
@@ -424,34 +437,28 @@ void modoAsistido(float presion_entrada)
   promedio = promediomovil.reading(mediana);
   derivada = (promedio-promedioant)/0.005;
 }
-void Calculos(struct FilterMovingAverage FilterMovAvg_DeltaP, struct MTIntegrator Integrator_DeltaP,struct FilterMovingAverage FilterMovAvg_Flujo, struct MTIntegrator Integrator_Flujo)
+
+void Calculos()
 {
   // Respiratory variable calcs
   IE = Tiempo_Expiracion_ms/(Tiempo_Inspiracion+Tiempo_Plateau_ms); //en ms
+  MV = (volumen_inspiracion*BPM_calculado)/1000;
   if(duracion_ciclo != 0)
   {
     BPM_calculado = 60000/duracion_ciclo;
   }
-  else
-  {
-    //tiempo_ciclo_anterior = tiempo_ciclo_actual;
-    MV = (volumen_inspiracion*BPM_calculado)/1000;
-  }
-  // Cálculo de presiones
-  Presion= ((0.002131)*sensor_presion_bits) -3.565;
-  Flujo=  ((0.6545)*sensor_flujo_bits);
-  // Cálculo del flujo diferencial y con sensirion
-  DeltaP = (sensor_diferencial_bits-diferencial_zero_cal)/factor_sensor_diferencial; //Diferencial
-  DeltaP_Avg = MTFilterMovingAverage_DeltaP(FilterMovAvg_DeltaP,DeltaP); //Primero filtramos el valor diferencial
-  volumen_diferencial = Integral_DeltaP(Integrator_DeltaP, DeltaP_Avg); // Luego calculamos el volumen diferencial
-  Flujo_Avg = MTFilterMovingAverage_Flujo(FilterMovAvg_Flujo,sensor_presion_bits); //Primero filtramos el valor del sensor de flujo
+  // Variable calc
+  Presion = ((0.002131)*sensor_presion_bits) -3.565-offsetPressure;
+  Flujo = sensor_flujo_bits-offsetFlow; //Scale factor from sfm3000 datasheet
+  DeltaP = sensor_diferencial_bits/37960.3-offsetDiffPress; //Scale factor from sdp811 datasheet
 }
 
-// Programación de funciones básicas
 void CierreValvulaInspiracion()
 {
-  EstadoValvulaInspiracion = false;
-  analogWrite(Val_Ins,Pwm_Min); // Cierre de válvula de inspiración, por qué no cero?
+    EstadoValvulaInspiracion = false;
+    analogWrite(Val_Ins,Pwm_Min);
+
+    analogWrite(Val_PC,Pwm_Min);
 }
 
 void CierreValvulaExhalacion()
@@ -468,95 +475,57 @@ void AperturaValvulaExhalacion()
 
 void AperturaValvulaInspiracion()
 {
+  if (ModoOperacion == 1)
+  {
   EstadoValvulaInspiracion = true;
   PwmOut = ((valor_inicial_PWM+(valor_final_PWM-valor_inicial_PWM))*Porcentaje_apertura_valvula/100);
+  PwmOut = constrain(PwmOut,Pwm_Min,Pwm_Max);
   analogWrite(Val_Ins,PwmOut); // Abre válvula de Inspiración
-}
-
-float DataMean(float sensor)
-{
-  Average <float> ave(100); // Buffer Mean 
-  for (int i = 0; i < 100; i++)
-  {
-    ave.push(sensor);
-    Mean = (ave.mean()); //Mean
   }
-  return Mean;
-}
-
-void ZeroCalibration()
-{
-  if(f<=datos_zero_cal)
+  else
   {
-    // Usa la función MTBasicsMean para encontrar el promedio
-    if(Zero_calibration)
-    {
-      datos_presion_zero_cal = DataMean(Presion);
-      datos_flujo_zero_cal = DataMean(Flujo);
-      datos_diferencial_zero_cal = DataMean(sensor_diferencial_bits);
-      f =f+1;
-    }
-    else
-    {
-      presion_zero_cal = datos_presion_zero_cal;
-      flujo_zero_cal = datos_flujo_zero_cal;
-      diferencial_zero_cal = datos_diferencial_zero_cal;
-      //Reset
-      datos_presion_zero_cal = 0;
-      datos_flujo_zero_cal = 0;
-      datos_diferencial_zero_cal = 0;
-
-      Zero_calibration = false;
-      f=1;
-    }
+    errorPC = presion_soporte+Peep_deseado-Presion;
+    errorIntegral += errorPC*(deltaT_ciclo/100);
+    PwmOut = (kp*errorPC+ki*errorIntegral)+valor_inicial_PWM;
+    PwmOut = constrain(PwmOut,valor_inicial_PWM,valor_final_PWM);
+    PwmOutPC = 9400;
+    PwmOutPC = constrain(PwmOutPC,valor_inicial_PWM,valor_final_PWM);
+    analogWrite(Val_PC,PwmOutPC);
+    analogWrite(Val_Ins,PwmOut); // Abre válvula de Inspiración
   }
 }
 
 void Mostrar_Datos()
 {
-  currenttimeM=millis();
-  tiempomuestra=currenttimeM-lasttimeM;
-  Serial.print("Presion: ");
+  Serial.print("PresionM: ");
   Serial.print(Presion);
   Serial.print(",");
-  Serial.print("Peep: ");
+  Serial.print("PeepM: ");
   Serial.print(Peep);
   Serial.print(",");
-  Serial.print("Presion_soporte: ");
+  Serial.print("PresionD: ");
   Serial.print(presion_soporte);
   Serial.print(",");
-  Serial.print("Flujo: ");
+  Serial.print("FlujoM: ");
   Serial.print(Flujo);
   Serial.print(",");
-  Serial.print("Volumen deseado: ");
-  Serial.print(Volumen_deseado);  //Ingresado por usuario
-  Serial.print(", ");
-  Serial.print("Volumen inspiracion: ");
-  Serial.print(volumen_inspiracion);  //Calculado
+  Serial.print("VolumenM: ");
+  Serial.print(volumen_inspiracion);
   Serial.print(",");
-  Serial.print("PIP: ");
+  Serial.print("PIPM: ");
   Serial.print(PIP);
   Serial.print(",");
-  Serial.print("VEF: ");
-  Serial.print(VEF);
-  Serial.print(",");
-  Serial.print("VIF: ");
-  Serial.print(VIF);
-  Serial.print(",");
-  Serial.print("T_muestreo: ");
-  Serial.print(tiempomuestra);
+  Serial.print("T_muestreoM: ");
+  Serial.print(deltaT_ciclo);
   Serial.print(", ");
-  Serial.print("PWM Out: ");
-  Serial.print(PwmOut);
+  Serial.print("PWMOut: ");
+  Serial.print(PwmOutAux);
   Serial.print(", ");
-  Serial.print("Timer_Count_0: ");
-  Serial.print(mytimers.timer[0].Counter);
+  Serial.print("ErrorPC: ");
+  Serial.print(errorPC);
   Serial.print(", ");
   Serial.print("Etapa_Res: ");
   Serial.print(EtapaResp);
-  Serial.print(", ");
-  Serial.print("Derivada_Presion: ");
-  Serial.print(derivada);
   Serial.print(", ");
   Serial.print("duracion_ciclo: ");
   Serial.print(duracion_ciclo);
@@ -567,175 +536,13 @@ void Mostrar_Datos()
   Serial.print("PWM_Caract: ");
   Serial.print(n);
   Serial.print(", ");
-  Serial.print("T. Trans_Caract: ");
-  Serial.print(acc_caract);
-  Serial.print(", ");
   Serial.print("MV: ");
   Serial.print(MV);
   Serial.print(", ");
-  Serial.print("Diferencial_Presion: ");
+  Serial.print("DiffPressM: ");
   Serial.print(differentialPressure);
-  Serial.print(", ");
-  Serial.print("Caso: ");
-  Serial.print(caso);
-  Serial.print(", ");
-  Serial.print(errorPC);
   Serial.print(", ");
   Serial.print("String: ");
   Serial.print(StringEntrada);
   Serial.println();
-  lasttimeM=currenttimeM;
-}
-
-float Statics_Vol_Max(float volumen_inspiracion)
-{
-  VIF_promedio_cal=VIF_promedio.reading(volumen_inspiracion);
-  if (VIF<= VIF_promedio_cal)
-  {
-    VIF=VIF_promedio_cal;
-  }
-  return VIF;
-}
-
-float Statics_Vol_Min(float volumen_inspiracion)
-{
-  VEF_promedio_cal=VEF_promedio.reading(volumen_inspiracion);
-  if (VEF>= VEF_promedio_cal && VEF_promedio_cal > 0)
-  {
-    VEF=VEF_promedio_cal;
-  }
-  return VEF;
-}
-
-float Statics_Presion_Max(float Presion)
-{
-  PIP_promedio_cal=PIP_promedio.reading(Presion);
-  if (PIP<= PIP_promedio_cal)
-  {
-    PIP=PIP_promedio_cal;
-  }
-  return PIP;
-}
-// Programación de funciones especiales
-float Integral_Flujo(struct MTIntegrator Integrator_Flujo, float entrada)
-{
-  //Asignación de valores a variables del struct
-  Integrator_Flujo.Enable = 1; Integrator_Flujo.Gain = 1000;
-  Integrator_Flujo.Update = true; Integrator_Flujo.In = entrada;
-  Integrator_Flujo.OutPresetValue = 0; Integrator_Flujo.SetOut = true;
-  Integrator_Flujo.HoldOut = false;
-
-  //Variables internas de la función
-  unsigned long Ultima_Muestra = 0, Ultima_Impresion = 0, dt=0;
-  const float conversion = 5.0 / 1024 * 1e-3;
-
-  // Calculo dt viejo unsigned long  dt = millis();
-  // Calculo dt nuevo:
-  lasttime=currenttime;
-  currenttime=millis();
-  dt=currenttime-lasttime;
-
-  // Cálculo de la integral
-  integral += Integrator_Flujo.In * (dt);
-  //Ultima_Muestra = elapseddt;
-  Integrator_Flujo.Out = Integrator_Flujo.Gain * (integral*conversion);
-
-  return Integrator_Flujo.Out;
-}
-
-float Integral_DeltaP(struct MTIntegrator Integrator_DeltaP, float entrada)
-{
-  //Asignación de valores a variables del struct
-  Integrator_DeltaP.Enable = 1; Integrator_DeltaP.Gain = 15.68;
-  Integrator_DeltaP.Update = true; Integrator_DeltaP.In = entrada;
-  Integrator_DeltaP.OutPresetValue = 0; Integrator_DeltaP.SetOut = true;
-  Integrator_DeltaP.HoldOut = false;
-
-  //Variables internas de la función
-  unsigned long Ultima_Muestra = 0;
-  unsigned long Ultima_Impresion = 0;
-  float integral = 0;
-  const float conversion = 5.0 / 1024 * 1e-3;
-  unsigned long dt = millis();
-
-  // Cálculo de la integral
-  integral += Integrator_DeltaP.In * (dt - Ultima_Muestra);
-  Ultima_Muestra = dt;
-  Integrator_DeltaP.Out = Integrator_DeltaP.Gain * (integral*conversion);
-  return Integrator_DeltaP.Out;
-}
-
-float MTFilterMovingAverage_Flujo(struct FilterMovingAverage FilterMovAvg_Flujo, float entrada)
-{
-  //Asignación de valores a variables del struct
-  FilterMovAvg_Flujo.Enable = 1;
-  FilterMovAvg_Flujo.WindowLength = 5;
-  FilterMovAvg_Flujo.Update = true;
-  FilterMovAvg_Flujo.In = entrada;
-
-  //Parametros
-  int readings [FilterMovAvg_Flujo.WindowLength];
-  int readIndex  = 0;
-  long total  = 0;
-  
-  //Aplicación de fórmulas
-  long average; //Perform average on sensor readings
-  total = total - readings[readIndex]; // subtract the last reading:
-  readings[readIndex] = FilterMovAvg_Flujo.In; // read the sensor:
-  total = total + readings[readIndex]; // add value to total:
-  readIndex = readIndex + 1;// handle index
-  if (readIndex >= FilterMovAvg_Flujo.WindowLength)
-  {
-    readIndex = 0;
-  }
-  FilterMovAvg_Flujo.Out = total / FilterMovAvg_Flujo.WindowLength; // calculate the average:
-  return FilterMovAvg_Flujo.Out;
-}
-
-float MTFilterMovingAverage_DeltaP(struct FilterMovingAverage FilterMovAvg_DeltaP, float entrada)
-{
-  //Asignación de valores a variables del struct
-  FilterMovAvg_DeltaP.Enable = 1;
-  FilterMovAvg_DeltaP.WindowLength = 5;
-  FilterMovAvg_DeltaP.Update = true;
-  FilterMovAvg_DeltaP.In = entrada;
-
-  //Parametros
-  int readings [FilterMovAvg_DeltaP.WindowLength];
-  int readIndex  = 0;
-  long total  = 0;
-  
-  //Aplicación de fórmulas
-  long average; //Perform average on sensor readings
-  total = total - readings[readIndex]; // subtract the last reading:
-  readings[readIndex] = FilterMovAvg_DeltaP.In; // read the sensor:
-  total = total + readings[readIndex]; // add value to total:
-  readIndex = readIndex + 1;// handle index
-  if (readIndex >= FilterMovAvg_DeltaP.WindowLength)
-  {
-    readIndex = 0;
-  }
-  FilterMovAvg_DeltaP.Out = total / FilterMovAvg_DeltaP.WindowLength; // calculate the average:
-  return FilterMovAvg_DeltaP.Out;
-}
-
-
-float Controlador_P(struct Proporcional P, unsigned int Peep_deseado, unsigned int presion_soporte,unsigned int presion)
-{
-  //Asignacion de Variables
-  P.pasado = 0;
-  P.Tiempo_Muestreo = 1;
-  P.SetValue =  Peep_deseado + presion_soporte;
-  P.ActValue = presion;
-  P.Kp = 30;
-
-  P.ahora = millis(); //Tiempo Actual
-  P.dt = P.ahora - P.pasado; // Diferencial de tiempo
-  if(P.dt >= P.Tiempo_Muestreo) //Si se supera el tiempo de muestreo
-  {
-    P.error = P.SetValue - P.SetValue; //Error - Feedback
-    P.Out = P.Kp*P.error; //Señal de Control
-    P.pasado = P.ahora; //Actualización del tiempo
-  }
-  return P.Out;
 }
