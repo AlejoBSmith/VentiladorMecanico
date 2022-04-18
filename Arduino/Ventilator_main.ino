@@ -13,7 +13,7 @@
 #include <SensirionI2CSdp.h>
 #define sfm3300i2c 0x40
 
-MedianFilter2<int> medianFilter2(5);
+MedianFilter2<int> medianFilter2(3);
 WTimer mytimers;
 Adafruit_ADS1115 ads1115;
 Separador HMI;
@@ -27,7 +27,7 @@ elapsedMillis VCTimerInsp;
 movingAvg VIF_promedio(5);
 movingAvg VEF_promedio(5);
 movingAvg PIP_promedio(5);
-movingAvg promediomovil(5);
+movingAvg promediomovil(2);
 
 void setup()
 {
@@ -162,7 +162,6 @@ void loop()
       PCTimer = 0; //only for first breath
       VCTimerInsp = 0;
       estado = 2;
-      integral=0;
       volumen_inspiracion=0; //Reset inspiratory volume to avoid integral drift
     break;
   //-------------------------------------------------------
@@ -215,7 +214,6 @@ void loop()
     break;
   //-------------------------------------------------------
     case 3: //Plateau (hold) time
-      integral=0; //Stops integrating flow
       caso = 3;
       EtapaResp = 2;
       if (ModoOperacion == 1)
@@ -241,7 +239,6 @@ void loop()
   //-------------------------------------------------------
     case 4: //Exhalacion    
       caso = 4;
-      integral=0;
       if (ExhTimer >= Tiempo_Expiracion_ms)
       {
         Peep = Presion;
@@ -267,12 +264,13 @@ void loop()
         {
           if (ExhTimer >= (Tiempo_Expiracion_ms/3)) //Checks wether 33% of expiratory time has passed before checking pressure variability threshold
           {
-            if (derivada>=150) //Pressure sensitivity (diff Pressure)
+            if (abs(derivada)>=10) //Pressure sensitivity (diff Pressure)
             {
               PCTimer = 0;
-              estado = 2; //Starts a new inpiratory cycle
+              estado = 1; //Starts a new inpiratory cycle
               duracion_ciclo=acc_ciclo;
               acc_ciclo=0;
+              ExhTimer=0;
               break;
             }
           }
@@ -455,10 +453,9 @@ void Calculos()
 
 void CierreValvulaInspiracion()
 {
-    EstadoValvulaInspiracion = false;
-    analogWrite(Val_Ins,Pwm_Min);
-
-    analogWrite(Val_PC,Pwm_Min);
+  EstadoValvulaInspiracion = false;
+  analogWrite(Val_Ins,Pwm_Min);
+  analogWrite(Val_PC,Pwm_Min);
 }
 
 void CierreValvulaExhalacion()
